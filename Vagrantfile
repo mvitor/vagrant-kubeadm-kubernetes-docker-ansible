@@ -1,42 +1,33 @@
-NUM_WORKER_NODES=2
-IP_NW="10.0.0."
-IP_START=10
+N = 2
 
 Vagrant.configure("2") do |config|
-  config.vm.provision "shell", inline: <<-SHELL
-      apt-get update -y
-      echo "$IP_NW$((IP_START))  master-node" >> /etc/hosts
-      echo "$IP_NW$((IP_START+1))  worker-node01" >> /etc/hosts
-      echo "$IP_NW$((IP_START+2))  worker-node02" >> /etc/hosts
-  SHELL
-
-  config.vm.box = "bento/ubuntu-21.10"
-  config.vm.box_check_update = true
-
-  config.vm.define "master" do |master|
-    # master.vm.box = "bento/ubuntu-18.04"
-    master.vm.hostname = "master-node"
-    master.vm.network "private_network", ip: IP_NW + "#{IP_START}"
-    master.vm.provider "virtualbox" do |vb|
-        vb.memory = 4048
-        vb.cpus = 2
-    end
-    master.vm.provision "shell", path: "scripts/common.sh"
-    master.vm.provision "shell", path: "scripts/master.sh"
+  config.vm.provider :docker do |d|
+     d.build_dir = "."
+     d.remains_running = true
+     d.has_ssh = true
+  end
+  
+  config.vm.define "k8s-master" do |master|
+    master.vm.network "private_network", ip: "192.168.50.10"  
+    master.vm.hostname = "k8s-master"
+    master.vm.provision "ansible" do |ansible|
+      ansible.playbook = "kubernetes-setup/master-playbook.yml"
+      ansible.extra_vars = {
+          node_ip: "192.168.50.10",
+      }
+    end 
   end
 
-  (1..NUM_WORKER_NODES).each do |i|
-
-  config.vm.define "node0#{i}" do |node|
-    node.vm.hostname = "worker-node0#{i}"
-    node.vm.network "private_network", ip: IP_NW + "#{IP_START + i}"
-    node.vm.provider "virtualbox" do |vb|
-        vb.memory = 2048
-        vb.cpus = 1
-    end
-    node.vm.provision "shell", path: "scripts/common.sh"
-    node.vm.provision "shell", path: "scripts/node.sh"
-  end
-
-  end
-end 
+  (1..N).each do |i|
+    config.vm.define "ks8node-#{i}" do |node|
+        node.vm.network "private_network", ip: "192.168.50.#{i + 10}"
+        node.vm.hostname = "ks8node-#{i}"  
+        node.vm.provision "ansible" do |ansible|
+          ansible.playbook = "kubernetes-setup/node-playbook.yml"
+          ansible.extra_vars = {
+              node_ip: "192.168.50.#{i + 10}",
+          } 
+        end      
+    end 
+  end 
+end  
